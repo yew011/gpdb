@@ -466,7 +466,7 @@ compresstype_is_valid(char *comptype)
 	 * must change!
 	 */
 	static const char *const valid_comptypes[] =
-			{"quicklz", "zlib", "rle_type", "none"};
+			{"lz4", "zlib", "rle_type", "none"};
 	for (i = 0; !found && i < ARRAY_SIZE(valid_comptypes); ++i)
 	{
 		if (pg_strcasecmp(valid_comptypes[i], comptype) == 0)

@@ -1169,11 +1169,11 @@ extern Datum gp_delete_relation_node_entry(PG_FUNCTION_ARGS);
 extern Datum gp_persistent_relation_node_check(PG_FUNCTION_ARGS);
 
 /* storage/compress.c */
-extern Datum quicklz_constructor(PG_FUNCTION_ARGS);
-extern Datum quicklz_destructor(PG_FUNCTION_ARGS);
-extern Datum quicklz_compress(PG_FUNCTION_ARGS);
-extern Datum quicklz_decompress(PG_FUNCTION_ARGS);
-extern Datum quicklz_validator(PG_FUNCTION_ARGS);
+extern Datum lz4_constructor(PG_FUNCTION_ARGS);
+extern Datum lz4_destructor(PG_FUNCTION_ARGS);
+extern Datum lz4_compress(PG_FUNCTION_ARGS);
+extern Datum lz4_decompress(PG_FUNCTION_ARGS);
+extern Datum lz4_validator(PG_FUNCTION_ARGS);
 
 extern Datum zlib_constructor(PG_FUNCTION_ARGS);
 extern Datum zlib_destructor(PG_FUNCTION_ARGS);
