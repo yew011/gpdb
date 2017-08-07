@@ -19,6 +19,7 @@ groups:
   - DPM_backup-restore
   - MM_gppkg
   - MM_pt-rebuild
+  - regression_tests_pxf_centos
   - fts
   - storage
   - QP_memory-accounting
@@ -387,6 +388,24 @@ resources:
     secret_access_key: {{bucket-secret-access-key}}
     regexp: deliverables/greenplum-db-(.*)-behave.tar.gz
 
+- name: singlecluster
+  type: s3
+  source:
+    access_key_id: {{hawq-aws-access-key-id}}
+    secret_access_key: {{hawq-aws-secret-access-key}}
+    bucket: {{pxf-aws-bucket-name}}
+    region_name: {{aws-region}}
+    versioned_file: singlecluster-without-pxf/singlecluster-CDH.tar.gz
+
+- name: pxf_tarball
+  type: s3
+  source:
+    access_key_id: {{hawq-aws-access-key-id}}
+    secret_access_key: {{hawq-aws-secret-access-key}}
+    bucket: {{pxf-aws-bucket-name}}
+    region_name: {{aws-region}}
+    versioned_file: tarballs/pxf.tar.gz
+
 - name: nightly-trigger
   type: time
   source:
@@ -705,6 +724,10 @@ jobs:
     - get: bin_gpdb
       resource: bin_gpdb_centos6
       passed: [compile_gpdb_centos6]
+      trigger: true
+    - get: singlecluster
+      trigger: true
+    - get: pxf_tarball
       trigger: true
     - get: centos-gpdb-dev-6
   - task: regression_tests_pxf

@@ -41,17 +41,47 @@ function setup_gpadmin_user() {
 	./gpdb_src/concourse/scripts/setup_gpadmin_user.bash "$TARGET_OS"
 }
 
+unpack_tarball() {
+	local tarball=$1
+	echo "Unpacking tarball: $(ls ${tarball})"
+	tar xfp ${tarball} --strip-components=1
+}
+
 function setup_singlecluster() {
-  pushd /home/gpadmin
-    wget https://s3-us-west-2.amazonaws.com/pivotal-singlecluster/singlecluster/singlecluster-HDP.tar.gz
-    tar xzf singlecluster-HDP.tar.gz
-    pushd singlecluster-HDP/bin
-      # set Standalone PXF mode without Hadoop
-      export PXFDEMO=true
-      ./init-pxf.sh
-      ./start-pxf.sh
-    popd
-  popd
+	pushd singlecluster && if [ -f ./*.tar.gz ]; then \
+		unpack_tarball ./*.tar.gz; \
+	fi && popd
+	install_pxf ${1}/singlecluster
+
+	pushd singlecluster/bin
+	# set Standalone PXF mode without Hadoop
+	export PXFDEMO=true
+	./init-pxf.sh
+	./start-pxf.sh
+	popd
+}
+
+install_pxf() {
+	local hdfsrepo=$1
+	if [ -d pxf_tarball ]; then
+		echo "======================================================================"
+		echo "                            Install PXF"
+		echo "======================================================================"
+		pushd pxf_tarball > /dev/null
+		unpack_tarball ./*.tar.gz
+		for X in distributions/pxf-*.tar.gz; do
+			tar -xvzf ${X}
+		done
+		mkdir -p ${hdfsrepo}/pxf/conf
+		mv pxf-*/pxf-*.jar ${hdfsrepo}/pxf
+		mv pxf-*/pxf.war ${hdfsrepo}/pxf
+		mv pxf-*/conf/{pxf-public.classpath,pxf-profiles.xml,pxf-private.classpath} ${hdfsrepo}/pxf/conf
+		popd > /dev/null
+		pushd ${hdfsrepo}/pxf && for X in pxf-*-[0-9]*.jar; do \
+			ln -s ${X} $(echo ${X} | sed -e 's/-[a-zA-Z0-9.]*.jar/.jar/'); \
+		done
+		popd > /dev/null
+	fi
 }
 
 function _main() {
@@ -72,7 +102,7 @@ function _main() {
 	time make_cluster
 	time gen_env
 
-    time setup_singlecluster
+	time setup_singlecluster $(pwd)
 	time run_regression_test
 }
 
