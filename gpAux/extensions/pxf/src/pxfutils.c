@@ -150,7 +150,11 @@ char*
 TypeOidGetTypename(Oid typid)
 {
 
+<<<<<<< HEAD
+	Assert(OidIsValid(typid));
+=======
 	Assert(OidIsValid(typeid));
+>>>>>>> 176a6233260f3b4a79f39435586c8f0c85b1b245
 
 	HeapTuple	typtup;
 	Form_pg_type typform;

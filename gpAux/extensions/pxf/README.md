@@ -5,10 +5,17 @@ At present, this extension is in development status, where only Demo PXF profile
 ## Table of Contents
 
 * Usage
+<<<<<<< HEAD
+* Initialize and start GPDB cluster
+* Enable PXF extension
+* Run unit tests
+* Run regression tests
+=======
  * Initialize and start GPDB cluster
  * Enable PXF extension
  * Run unit tests
  * Run regression tests
+>>>>>>> 176a6233260f3b4a79f39435586c8f0c85b1b245
 
 ## Usage
 

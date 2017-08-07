@@ -14,8 +14,11 @@ else
 endif
 
 CURL_DIR = /usr/local/opt/curl
+<<<<<<< HEAD
+=======
 #override CPPFLAGS := -I$(CURL_DIR)/include $(CPPFLAGS)
 #override LDFLAGS := -L$(CURL_DIR)/lib $(LDFLAGS)
+>>>>>>> 176a6233260f3b4a79f39435586c8f0c85b1b245
 
 SHLIB_LINK += -lcurl
 
