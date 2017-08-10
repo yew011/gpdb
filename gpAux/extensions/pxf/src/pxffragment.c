@@ -19,11 +19,15 @@
  */
 
 #include <json-c/json.h>
+#include "postgres.h"
+#include "cdb/cdbtm.h"
+#include "cdb/cdbvars.h"
 #include "pxffragment.h"
 
 static void rest_request(GPHDUri *hadoop_uri, ClientContext* client_context, char *rest_msg);
 static List* parse_get_fragments_response(List *fragments, StringInfo rest_buf);
 char* concat(int num_args, ...);
+static List* filter_fragments_for_segment(List* list);
 
 /*
  * get_data_fragment_list
@@ -195,4 +199,58 @@ char* concat(int num_args, ...)
     va_end(ap);
 
     return str.data;
+}
+
+/*
+ * Takes a list of fragments and determines which ones need to be processes by the given segment based on MOD function.
+ * Removes the elements which will not be processed from the list and frees up their memory.
+ * Returns the resulting list, or NIL if no elements satisfy the condition.
+ */
+static List*
+filter_fragments_for_segment(List* list)
+{
+    if (!list)
+        ereport(ERROR,
+                (errcode(ERRCODE_INTERNAL_ERROR),
+                        errmsg("internal error in pxfutils.c:filter_list. Parameter list is null.")));
+
+    DistributedTransactionId xid = getDistributedTransactionId();
+    if (xid == InvalidDistributedTransactionId)
+        ereport(ERROR,
+                (errcode_for_file_access(),
+                        errmsg("internal error in pxfutils.c:filter_list. Cannot get distributed transaction identifier")));
+
+    /*
+     * to determine which segment S should process an element at a given index I, use a randomized MOD function
+     * S = MOD(I + MOD(XID, N), N)
+     * which ensures more fair work distribution for small lists of just a few elements across N segments
+     * global transaction ID is used as a randomizer, as it is different for every query
+     * while being the same across all segments for a given query
+     */
+
+    List* result = list;
+    ListCell *previous = NULL, *current = NULL;
+
+    int index = 0;
+    int4 shift = xid % GpIdentity.numsegments;
+
+    for (current = list_head(list); current != NULL; index++)
+    {
+        if (GpIdentity.segindex == (index + shift) % GpIdentity.numsegments)
+        {
+            /* current segment is the one that should process, keep the element, adjust cursor pointers */
+            previous = current;
+            current = lnext(current);
+        }
+        else
+        {
+            /* current segment should not process this element, another will, drop the element from the list */
+            ListCell* to_delete = current;
+            if (to_delete->data.ptr_value)
+                free_fragment((DataFragment *) to_delete->data.ptr_value);
+            current = lnext(to_delete);
+            result = list_delete_cell(list, to_delete, previous);
+        }
+    }
+    return result;
 }
