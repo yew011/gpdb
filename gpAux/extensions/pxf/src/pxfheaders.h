@@ -39,6 +39,6 @@ typedef struct sPxfInputData
 /*
  * Adds the headers necessary for PXF service call
  */
-void build_http_headers(PxfInputData *input);
+extern void build_http_headers(PxfInputData *input);
 
 #endif //_PXFHEADERS_H_

@@ -24,10 +24,85 @@
 #include "cdb/cdbvars.h"
 #include "pxffragment.h"
 
+static const char *PXF_HOST = "localhost";
+static const int PXF_PORT = 51200;
+
+static List* get_data_fragment_list(GPHDUri *hadoop_uri,  ClientContext* client_context);
 static void rest_request(GPHDUri *hadoop_uri, ClientContext* client_context, char *rest_msg);
 static List* parse_get_fragments_response(List *fragments, StringInfo rest_buf);
-char* concat(int num_args, ...);
+static char* concat(int num_args, ...);
 static List* filter_fragments_for_segment(List* list);
+static void assign_pxf_location_to_fragments(List *fragments);
+static void init(GPHDUri* uri, ClientContext* cl_context);
+static void free_fragment(DataFragment *fragment);
+static void print_fragment_list(List *fragments);
+static void init_client_context(ClientContext *client_context);
+
+/* Get List of fragments using PXF
+ * Returns selected fragments that have been allocated to the current segment
+ */
+void set_fragments(GPHDUri* uri) {
+
+	List *data_fragments = NIL;
+
+	/* Context for the Fragmenter API */
+	ClientContext client_context;
+	PxfInputData inputData = {0};
+
+	Assert(uri != NULL);
+
+	/*
+	 * 1. Initialize curl headers
+	 */
+	init(uri, &client_context);
+	if (!uri)
+		return;
+
+	/*
+	 * Enrich the curl HTTP header
+	 */
+	inputData.headers = client_context.http_headers;
+	inputData.gphduri = uri;
+	//inputData.rel = relation;
+	build_http_headers(&inputData);
+
+	/*
+	 * 2. Get the fragments data from the PXF service
+	 */
+	data_fragments = get_data_fragment_list(uri, &client_context);
+
+	assign_pxf_location_to_fragments(data_fragments);
+
+	/* debug - enable when tracing */
+	if ((FRAGDEBUG >= log_min_messages) || (FRAGDEBUG >= client_min_messages))
+		print_fragment_list(data_fragments);
+
+	/*
+	 * 3. Call the work allocation algorithm
+	 */
+	data_fragments = filter_fragments_for_segment(data_fragments);
+
+	uri->fragments = data_fragments;
+
+	return;
+}
+
+/*
+ * release the fragment list
+ */
+List*
+free_fragment_list(List *fragments)
+{
+	ListCell *frag_cell = NULL;
+
+	foreach(frag_cell, fragments)
+	{
+		DataFragment *fragment = (DataFragment*)lfirst(frag_cell);
+		free_fragment(fragment);
+	}
+	list_free(fragments);
+	return NIL;
+}
 
 /*
  * get_data_fragment_list
@@ -37,7 +112,7 @@ static List* filter_fragments_for_segment(List* list);
  *
  * 2. Process the returned list and create a list of DataFragment with it.
  */
-List*
+static List*
 get_data_fragment_list(GPHDUri *hadoop_uri,
                        ClientContext *client_context)
 {
@@ -51,7 +126,6 @@ get_data_fragment_list(GPHDUri *hadoop_uri,
 
     return data_fragments;
 }
-
 
 /*
  * Wrap the REST call with a retry for the HA HDFS scenario
@@ -153,7 +227,7 @@ parse_get_fragments_response(List *fragments, StringInfo rest_buf)
 /*
  * release memory of a single fragment
  */
-void free_fragment(DataFragment *fragment)
+static void free_fragment(DataFragment *fragment)
 {
     ListCell *loc_cell = NULL;
 
@@ -185,7 +259,7 @@ void free_fragment(DataFragment *fragment)
 }
 
 /* Concatenate multiple literal strings using stringinfo */
-char* concat(int num_args, ...)
+static char* concat(int num_args, ...)
 {
     va_list ap;
     StringInfoData str;
@@ -253,4 +327,127 @@ filter_fragments_for_segment(List* list)
         }
     }
     return result;
+}
+
+/*
+ * Preliminary curl initializations for the REST communication
+ */
+static void init(GPHDUri* uri, ClientContext* cl_context)
+{
+    char *fragmenter = NULL;
+    char *profile = NULL;
+
+    /*
+     * 2. Communication with the Hadoop back-end
+     *    Initialize churl client context and header
+     */
+    init_client_context(cl_context);
+    cl_context->http_headers = churl_headers_init();
+
+    /* set HTTP header that guarantees response in JSON format */
+    churl_headers_append(cl_context->http_headers, REST_HEADER_JSON_RESPONSE, NULL);
+    if (!cl_context->http_headers)
+        return;
+
+    /*
+     * 3. Test that Fragmenter or Profile was specified in the URI
+     */
+    if(GPHDUri_get_value_for_opt(uri, "fragmenter", &fragmenter, false) != 0
+       && GPHDUri_get_value_for_opt(uri, "profile", &profile, false) != 0)
+    {
+        ereport(ERROR,
+                (errcode(ERRCODE_SYNTAX_ERROR),
+                        errmsg("FRAGMENTER or PROFILE option must exist in %s", uri->uri)));
+    }
+
+    return;
+}
+
+/*
+ * Assign the remote rest port to each fragment
+ */
+static void assign_pxf_location_to_fragments(List *fragments)
+{
+	ListCell *frag_c = NULL;
+
+	foreach(frag_c, fragments)
+	{
+		ListCell 		*host_c 		= NULL;
+		DataFragment 	*fragdata	= (DataFragment*)lfirst(frag_c);
+		// char* ip = NULL;
+
+		foreach(host_c, fragdata->replicas)
+		{
+			FragmentHost *fraghost = (FragmentHost*)lfirst(host_c);
+//			/* In case there are several fragments on the same host, we assume
+//			 * there are multiple DN residing together.
+//			 * The port is incremented by one, to match singlecluster convention */
+//			if (pxf_service_singlecluster)
+//			{
+//				if (ip == NULL)
+//				{
+//					ip = fraghost->ip;
+//				}
+//				else if (are_ips_equal(ip, fraghost->ip))
+//				{
+//					port++;
+//				}
+//			}
+			fraghost->ip = pstrdup(PXF_HOST);
+			fraghost->rest_port = PXF_PORT;
+		}
+	}
+}
+
+/*
+ * Debug function - print the splits data structure obtained from the namenode
+ * response to <GET_BLOCK_LOCATIONS> request
+ */
+static void
+print_fragment_list(List *fragments)
+{
+	ListCell *fragment_cell = NULL;
+	StringInfoData log_str;
+	initStringInfo(&log_str);
+
+	appendStringInfo(&log_str, "Fragment list: (%d elements)\n",
+			fragments ? fragments->length : 0);
+
+	foreach(fragment_cell, fragments)
+	{
+		DataFragment	*frag	= (DataFragment*)lfirst(fragment_cell);
+		ListCell		*lc		= NULL;
+
+		appendStringInfo(&log_str, "Fragment index: %d\n", frag->index);
+
+		foreach(lc, frag->replicas)
+		{
+			FragmentHost* host = (FragmentHost*)lfirst(lc);
+			appendStringInfo(&log_str, "replicas: host: %s\n", host->ip);
+		}
+		appendStringInfo(&log_str, "metadata: %s\n", frag->fragment_md ? frag->fragment_md : "NULL");
+
+		if (frag->user_data)
+		{
+			appendStringInfo(&log_str, "user data: %s\n", frag->user_data);
+		}
+
+		if (frag->profile)
+		{
+			appendStringInfo(&log_str, "profile: %s\n", frag->profile);
+		}
+	}
+
+	elog(FRAGDEBUG, "%s", log_str.data);
+	pfree(log_str.data);
+}
+
+/*
+ * Initializes the client context
+ */
+static void init_client_context(ClientContext *client_context)
+{
+	client_context->http_headers = NULL;
+	client_context->handle = NULL;
+	initStringInfo(&(client_context->the_rest_buf));
 }

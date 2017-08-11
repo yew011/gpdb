@@ -66,10 +66,9 @@ parseGPHDUri(const char *uri_str)
 	GPHDUri	*uri = (GPHDUri *)palloc0(sizeof(GPHDUri));
 	char	*cursor;
 
-	uri->uri = GPHDUri_dup_without_segwork(uri_str);
+	uri->uri = pstrdup(uri_str);
 	cursor = uri->uri;
 
-	GPHDUri_parse_segwork(uri, uri_str);
 	GPHDUri_parse_protocol(uri, &cursor);
 	GPHDUri_parse_authority(uri, &cursor);
 	GPHDUri_parse_data(uri, &cursor);
@@ -548,29 +547,41 @@ GPHDUri_free_fragments(GPHDUri *uri)
 }
 
 /*
- * Returns a uri without the segwork section.
- * segwork section removed so users won't get it 
- * when an error occurs and the uri is printed
+ * GPHDUri_get_value_for_opt
+ *
+ * Given a key, find the matching val and assign it to 'val'.
+ * If 'emit_error' is set, report an error and quit if the
+ * requested key or its value is missing.
+ *
+ * Returns 0 if the key was found, -1 otherwise.
  */
-static char*
-GPHDUri_dup_without_segwork(const char* uri)
+int
+GPHDUri_get_value_for_opt(GPHDUri *uri, char *key, char **val, bool emit_error)
 {
-	char	*segwork;
-	char	*no_segwork;
+	ListCell	*item;
 
-	no_segwork = pstrdup(uri);
-	segwork = strstr(no_segwork, segwork_substring);
-
-	/* If segwork_substring was not found,
-	 * just return a dup of the string
-	 */
-	if (segwork != NULL)
+	foreach(item, uri->options)
 	{
-		/* back 1 char to include either & or ? */
-		--segwork;
-		*segwork = 0;
+		OptionData *data = (OptionData*)lfirst(item);
+
+		if (pg_strcasecmp(data->key, key) == 0)
+		{
+			*val = data->value;
+
+			if (emit_error && !(*val))
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("No value assigned to the %s option in "
+								"%s", key, uri->uri)));
+
+			return 0;
+		}
 	}
 
-	return no_segwork;
-}
+	if (emit_error)
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+				 errmsg("Missing %s option in %s", key, uri->uri)));
 
+	return -1;
+}

@@ -24,6 +24,7 @@
 #include "pxfuriparser.h"
 #include "pxfutils.h"
 #include "libchurl.h"
+#include "pxfheaders.h"
 
 /*
  * One debug level for all log messages from the data allocation algorithm
@@ -61,7 +62,7 @@ typedef struct sFragmentHost
     int   rest_port;
 } FragmentHost;
 
-extern List* get_data_fragment_list(GPHDUri *hadoop_uri,  ClientContext* client_context);
-extern void free_fragment(DataFragment *fragment);
+extern void set_fragments(GPHDUri* uri);
+extern List* free_fragment_list(List *fragments);
 
 #endif //GPDB_PXFFRAGMENT_H
