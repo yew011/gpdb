@@ -108,7 +108,7 @@ create_context(PG_FUNCTION_ARGS, bool is_import)
     GPHDUri *uri = parseGPHDUri(EXTPROTOCOL_GET_URL(fcinfo));
     context->gphd_uri = uri;
     /* set fragments */
-    set_fragments(&uri);
+    set_fragments(uri);
 
     if (is_import)
         Assert(context->gphd_uri->fragments != NULL);

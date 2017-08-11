@@ -31,6 +31,7 @@
 /* include mock files */
 #include "mock/pxfbridge_mock.c"
 #include "mock/pxfuriparser_mock.c"
+#include "mock/pxffragment_mock.c"
 
 const char* uri_param = "pxf://localhost:51200/tmp/dummy1";
 const char* uri_param_segwork = "pxf://localhost:51200/tmp/dummy1&segwork=46@127.0.0.1@51200@tmp/dummy1.1@0@ZnJhZ21lbnQx@@@";
@@ -68,6 +69,11 @@ test_pxfprotocol_import_first_call(void **state)
     GPHDUri* gphd_uri = palloc0(sizeof(GPHDUri));
     expect_string(parseGPHDUri, uri_str, uri_param_segwork);
     will_return(parseGPHDUri, gphd_uri);
+
+    /* set mock behavior for set fragments */
+    gphd_uri->fragments = palloc0(sizeof(List));
+	expect_value(set_fragments, uri, gphd_uri);
+	will_assign_memory(set_fragments, uri, gphd_uri, sizeof(GPHDUri));
 
     /* set mock behavior for bridge import start -- nothing here */
     expect_any(gpbridge_import_start, context);
