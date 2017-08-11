@@ -55,7 +55,7 @@ test_parseGPHDUri_ValidURI(void **state)
     expect_normalize_key_name("RESOLVER");
     expect_normalize_key_name("ANALYZER");
 
-    GPHDUri* parsed = parseGPHDUri(uri_with_segwork_1);
+    GPHDUri* parsed = parseGPHDUri(uri_no_segwork);
 
     assert_true(parsed != NULL);
     assert_string_equal(parsed->uri, uri_no_segwork);
@@ -88,9 +88,7 @@ test_parseGPHDUri_ValidURI(void **state)
     assert_string_equal(option->key, "ANALYZER");
     assert_string_equal(option->value, "SomeAnalyzer");
 
-    assert_true(parsed->fragments != NULL);
-    assert_int_equal(parsed->fragments->length, 1);
-    assert_string_equal(((FragmentData*)linitial(parsed->fragments))->source_name, "tmp/test");
+    assert_true(parsed->fragments == NULL);
 
     assert_true(parsed->profile == NULL);
 

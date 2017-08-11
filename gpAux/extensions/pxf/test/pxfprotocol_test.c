@@ -67,13 +67,14 @@ test_pxfprotocol_import_first_call(void **state)
 
     /* set mock behavior for uri parsing */
     GPHDUri* gphd_uri = palloc0(sizeof(GPHDUri));
-    expect_string(parseGPHDUri, uri_str, uri_param_segwork);
+    expect_string(parseGPHDUri, uri_str, uri_param);
     will_return(parseGPHDUri, gphd_uri);
 
     /* set mock behavior for set fragments */
     gphd_uri->fragments = palloc0(sizeof(List));
-	expect_value(set_fragments, uri, gphd_uri);
-	will_assign_memory(set_fragments, uri, gphd_uri, sizeof(GPHDUri));
+    expect_value(set_fragments, uri, gphd_uri);
+    will_assign_memory(set_fragments, uri, gphd_uri, sizeof(GPHDUri));
+    will_be_called(set_fragments);
 
     /* set mock behavior for bridge import start -- nothing here */
     expect_any(gpbridge_import_start, context);

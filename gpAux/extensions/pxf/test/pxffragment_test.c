@@ -10,10 +10,14 @@
 #include "../src/pxffragment.c"
 
 /* include mock files */
+#include "mock/libchurl_mock.c"
+#include "mock/pxfheaders_mock.c"
+#include "mock/pxfuriparser_mock.c"
 #include "mock/pxfutils_mock.c"
 
 /* helper functions */
-static List* prepare_list(int fragtotal, int segindex, int segtotal, int xid);
+static List* prepare_fragment_list(int fragtotal, int segindex, int segtotal, int xid);
+static List* prepare_fragment_list_with_replicas(int fragtotal, int segindex, int segtotal, int xid, int num_replicas);
 
 void
 test_filter_fragments_for_segment(void **state)
