@@ -41,7 +41,7 @@ static void init_client_context(ClientContext *client_context);
 /* Get List of fragments using PXF
  * Returns selected fragments that have been allocated to the current segment
  */
-void set_fragments(GPHDUri* uri) {
+void set_fragments(GPHDUri* uri, Relation relation) {
 
 	List *data_fragments = NIL;
 
@@ -63,7 +63,7 @@ void set_fragments(GPHDUri* uri) {
 	 */
 	inputData.headers = client_context.http_headers;
 	inputData.gphduri = uri;
-	//inputData.rel = relation;
+	inputData.rel = relation;
 	build_http_headers(&inputData);
 
 	/*
@@ -195,22 +195,20 @@ parse_get_fragments_response(List *fragments, StringInfo rest_buf)
 
         /* 3. location - fragment meta data */
         struct json_object *js_fragment_metadata;
-        if (json_object_object_get_ex(js_fragment, "metadata", &js_fragment_metadata))
+        if (json_object_object_get_ex(js_fragment, "metadata", &js_fragment_metadata) && js_fragment_metadata)
             fragment->fragment_md = pstrdup(json_object_get_string(js_fragment_metadata));
-
 
         /* 4. userdata - additional user information */
         struct json_object *js_user_data;
-        if (json_object_object_get_ex(js_fragment, "userData", &js_user_data))
+        if (json_object_object_get_ex(js_fragment, "userData", &js_user_data) && js_user_data)
             fragment->user_data = pstrdup(json_object_get_string(js_user_data));
 
         /* 5. profile - recommended profile to work with fragment */
         struct json_object *js_profile;
-        if (json_object_object_get_ex(js_fragment, "profile", &js_profile))
+        if (json_object_object_get_ex(js_fragment, "profile", &js_profile) && js_profile)
             fragment->profile = pstrdup(json_object_get_string(js_profile));
 
         /*
-         * HD-2547:
          * Ignore fragment if it doesn't contain any host locations,
          * for example if the file is empty.
          */
@@ -334,9 +332,6 @@ filter_fragments_for_segment(List* list)
  */
 static void init(GPHDUri* uri, ClientContext* cl_context)
 {
-    char *fragmenter = NULL;
-    char *profile = NULL;
-
     /*
      * 2. Communication with the Hadoop back-end
      *    Initialize churl client context and header
@@ -348,17 +343,6 @@ static void init(GPHDUri* uri, ClientContext* cl_context)
     churl_headers_append(cl_context->http_headers, REST_HEADER_JSON_RESPONSE, NULL);
     if (!cl_context->http_headers)
         return;
-
-    /*
-     * 3. Test that Fragmenter or Profile was specified in the URI
-     */
-    if(GPHDUri_get_value_for_opt(uri, "fragmenter", &fragmenter, false) != 0
-       && GPHDUri_get_value_for_opt(uri, "profile", &profile, false) != 0)
-    {
-        ereport(ERROR,
-                (errcode(ERRCODE_SYNTAX_ERROR),
-                        errmsg("FRAGMENTER or PROFILE option must exist in %s", uri->uri)));
-    }
 
     return;
 }

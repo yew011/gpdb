@@ -62,7 +62,7 @@ typedef struct sFragmentHost
     int   rest_port;
 } FragmentHost;
 
-extern void set_fragments(GPHDUri* uri);
+extern void set_fragments(GPHDUri* uri, Relation relation);
 extern List* free_fragment_list(List *fragments);
 
 #endif //GPDB_PXFFRAGMENT_H

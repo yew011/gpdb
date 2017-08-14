@@ -84,10 +84,4 @@ GPHDUri	*parseGPHDUri(const char *uri_str);
  */
 void 	 freeGPHDUri(GPHDUri *uri);
 
-/*
- *  sets val to a value based on key
- */
-int GPHDUri_get_value_for_opt(GPHDUri *uri, char *key, char **val, bool emit_error);
-
-
 #endif	// _PXFURIPARSER_H_

@@ -36,9 +36,7 @@ static void expect_normalize_key_name(const char *key);
 static void test_parseGPHDUri_helper(const char* uri, const char* message);
 static void test_parseFragment_helper(const char* fragment, const char* message);
 
-static char uri_no_segwork[] = "pxf://1.2.3.4:5678/some/path/and/table.tbl?FRAGMENTER=SomeFragmenter&ACCESSOR=SomeAccessor&RESOLVER=SomeResolver&ANALYZER=SomeAnalyzer";
-static char uri_with_segwork_1[] = "pxf://1.2.3.4:5678/some/path/and/table.tbl?FRAGMENTER=SomeFragmenter&ACCESSOR=SomeAccessor&RESOLVER=SomeResolver&ANALYZER=SomeAnalyzer&segwork=42@127.0.0.1@51200@tmp/test@0@ZnJhZ21lbnQx@@@";
-static char uri_with_segwork_2[] = "pxf://1.2.3.4:5678/some/path/and/table.tbl?FRAGMENTER=SomeFragmenter&ACCESSOR=SomeAccessor&RESOLVER=SomeResolver&ANALYZER=SomeAnalyzer&segwork=42@127.0.0.1@51200@tmp/test@0@ZnJhZ21lbnQx@@@41@127.0.0.1@51200@tmp/foo@0@ZnJhZ21lbnQx@@@";
+static char uri_str[] = "pxf://1.2.3.4:5678/some/path/and/table.tbl?FRAGMENTER=SomeFragmenter&ACCESSOR=SomeAccessor&RESOLVER=SomeResolver&ANALYZER=SomeAnalyzer";
 
 /*
  * Test parsing of valid uri as given in LOCATION in a PXF external table.
@@ -55,10 +53,10 @@ test_parseGPHDUri_ValidURI(void **state)
     expect_normalize_key_name("RESOLVER");
     expect_normalize_key_name("ANALYZER");
 
-    GPHDUri* parsed = parseGPHDUri(uri_no_segwork);
+    GPHDUri* parsed = parseGPHDUri(uri_str);
 
     assert_true(parsed != NULL);
-    assert_string_equal(parsed->uri, uri_no_segwork);
+    assert_string_equal(parsed->uri, uri_str);
 
     assert_string_equal(parsed->protocol, "pxf");
     assert_string_equal(parsed->host, "1.2.3.4");
@@ -300,68 +298,6 @@ test_GPHDUri_parse_fragment_MissingProfile(void **state)
     test_parseFragment_helper(fragment, "internal error in pxfuriparser.c:GPHDUri_parse_fragment. Fragment string is invalid.");
 }
 
-void
-test_GPHDUri_parse_segwork_NoSegwork(void **state)
-{
-    GPHDUri	*uri = (GPHDUri *)palloc0(sizeof(GPHDUri));
-    GPHDUri_parse_segwork(uri, uri_no_segwork);
-    assert_true(uri->fragments == NULL);
-    pfree(uri);
-}
-
-void
-test_GPHDUri_parse_segwork_TwoFragments(void **state)
-{
-    GPHDUri	*uri = (GPHDUri *)palloc0(sizeof(GPHDUri));
-
-    GPHDUri_parse_segwork(uri, uri_with_segwork_2);
-
-    assert_true(uri->fragments != NULL);
-    assert_int_equal(uri->fragments->length, 2);
-    assert_string_equal(((FragmentData*)linitial(uri->fragments))->source_name, "tmp/test");
-    assert_string_equal(((FragmentData*)lsecond(uri->fragments))->source_name, "tmp/foo");
-
-    list_free_deep(uri->fragments);
-    pfree(uri);
-}
-
-/*
- * Helper function for parse fragment test cases
- */
-static void
-test_parseFragment_helper(const char* fragment, const char* message)
-{
-    List *fragments = NIL;
-
-    MemoryContext old_context = CurrentMemoryContext;
-    PG_TRY();
-    {
-        /* This will throw a ereport(ERROR).*/
-        fragments = GPHDUri_parse_fragment(fragment, fragments);
-        assert_false("Expected Exception");
-    }
-    PG_CATCH();
-    {
-        MemoryContextSwitchTo(old_context);
-        ErrorData *edata = CopyErrorData();
-        FlushErrorState();
-
-        StringInfo err_msg = makeStringInfo();
-        appendStringInfo(err_msg, message);
-
-        /* Validate the type of expected error */
-        assert_true(edata->sqlerrcode == ERRCODE_INTERNAL_ERROR);
-        assert_true(edata->elevel == ERROR);
-        assert_string_equal(edata->message, err_msg->data);
-
-        list_free(fragments);
-        pfree(err_msg->data);
-        pfree(err_msg);
-        elog_dismiss(INFO);
-    }
-    PG_END_TRY();
-}
-
 /*
  * Helper function for parse uri test cases
  */
@@ -418,20 +354,7 @@ main(int argc, char* argv[])
             unit_test(test_parseGPHDUri_NegativeTestMissingEqual),
             unit_test(test_parseGPHDUri_NegativeTestDuplicateEquals),
             unit_test(test_parseGPHDUri_NegativeTestMissingKey),
-            unit_test(test_parseGPHDUri_NegativeTestMissingValue),
-            unit_test(test_GPHDUri_parse_fragment_EmptyProfile),
-            unit_test(test_GPHDUri_parse_fragment_ValidFragment),
-            unit_test(test_GPHDUri_parse_fragment_EmptyString),
-            unit_test(test_GPHDUri_parse_fragment_NullFragment),
-            unit_test(test_GPHDUri_parse_fragment_MissingIpHost),
-            unit_test(test_GPHDUri_parse_fragment_MissingPort),
-            unit_test(test_GPHDUri_parse_fragment_MissingSourceName),
-            unit_test(test_GPHDUri_parse_fragment_MissingIndex),
-            unit_test(test_GPHDUri_parse_fragment_MissingFragmentMetadata),
-            unit_test(test_GPHDUri_parse_fragment_MissingUserData),
-            unit_test(test_GPHDUri_parse_fragment_MissingProfile),
-            unit_test(test_GPHDUri_parse_segwork_NoSegwork),
-            unit_test(test_GPHDUri_parse_segwork_TwoFragments)
+            unit_test(test_parseGPHDUri_NegativeTestMissingValue)
     };
 
     MemoryContextInit();

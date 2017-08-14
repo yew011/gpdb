@@ -102,20 +102,22 @@ pxfprotocol_import(PG_FUNCTION_ARGS)
 static gphadoop_context*
 create_context(PG_FUNCTION_ARGS, bool is_import)
 {
-    gphadoop_context* context = palloc0(sizeof(gphadoop_context));
-
     /* parse and set uri */
     GPHDUri *uri = parseGPHDUri(EXTPROTOCOL_GET_URL(fcinfo));
+    Relation relation = EXTPROTOCOL_GET_RELATION(fcinfo);
+
+    /* get & set fragments */
+    set_fragments(uri, relation);
+
+    /* create & set context */
+    gphadoop_context* context = palloc0(sizeof(gphadoop_context));
     context->gphd_uri = uri;
-    /* set fragments */
-    set_fragments(uri);
+    context->relation = relation;
 
     if (is_import)
         Assert(context->gphd_uri->fragments != NULL);
-
     initStringInfo(&context->uri);
     initStringInfo(&context->write_file_name);
-    context->relation = EXTPROTOCOL_GET_RELATION(fcinfo);
 
     return context;
 }

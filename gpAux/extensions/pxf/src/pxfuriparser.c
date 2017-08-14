@@ -20,8 +20,6 @@
 #include "pxfuriparser.h"
 #include "pxfutils.h"
 
-static const char* segwork_substring = "segwork=";
-static const char segwork_separator = '@';
 static const int EMPTY_VALUE_LEN = 2;
 
 /* helper function declarations */
@@ -31,10 +29,7 @@ static void  GPHDUri_parse_data(GPHDUri *uri, char **cursor);
 static void  GPHDUri_parse_options(GPHDUri *uri, char **cursor);
 static List* GPHDUri_parse_option(char* pair, GPHDUri *uri);
 static void  GPHDUri_free_options(GPHDUri *uri);
-static void  GPHDUri_parse_segwork(GPHDUri *uri, const char *uri_str);
-static List* GPHDUri_parse_fragment(char* fragment, List* fragments);
 static void  GPHDUri_free_fragments(GPHDUri *uri);
-static char	*GPHDUri_dup_without_segwork(const char* uri);
 
 /* parseGPHDUri
  *
@@ -42,7 +37,7 @@ static char	*GPHDUri_dup_without_segwork(const char* uri);
  * verifying valid structure given a specific target protocol.
  *
  * URI format:
- * 		<protocol name>://<authority>/<data>?<option>&<option>&<...>&segwork=<segwork>
+ * 		<protocol name>://<authority>/<data>?<option>&<option>&<...>
  *
  *
  * protocol name	- must be 'pxf'
@@ -50,9 +45,6 @@ static char	*GPHDUri_dup_without_segwork(const char* uri);
  * data				- data path (directory name/table name/etc., depending on target)
  * options			- valid options are dependent on the protocol. Each
  * 					  option is a key value pair.
- * 					  segwork option is not a user option but a gp master
- * 					  option. It is removed as fast as possible from the uri
- * 					  so errors, won't be printed with it to the user.
  *
  * inputs:
  * 		'uri_str'	- the raw uri str
@@ -344,171 +336,6 @@ GPHDUri_free_options(GPHDUri *uri)
 }
 
 /*
- * GPHDUri_parse_segwork parses the segwork section of the uri.
- * ...&segwork=<size>@<ip>@<port>@<index><size>@<ip>@<port>@<index><size>...
- */
-static void
-GPHDUri_parse_segwork(GPHDUri *uri, const char *uri_str)
-{
-	char		*segwork;
-	char		*fragment;
-	char		*sizestr;
-	char		*size_end;
-	int 		 fragment_size, count = 0;
-
-	/* skip segwork= */
-	segwork = strstr(uri_str, segwork_substring);
-	if (segwork == NULL)
-		return;
-
-	segwork += strlen(segwork_substring);
-
-	/*
-	 * read next segment.
-	 * each segment is prefixed its size.
-	 */
-	while (segwork && strlen(segwork))
-	{
-		/* expect size */
-		size_end = strchr(segwork, segwork_separator);
-		Assert(size_end != NULL);
-        sizestr = pnstrdup(segwork, size_end - segwork);
-		fragment_size = atoi(sizestr);
-		segwork = size_end + 1; /* skip the size field */
-		Assert(fragment_size <= strlen(segwork));
-
-		fragment = pnstrdup(segwork, fragment_size);
-		elog(DEBUG2, "GPHDUri_parse_segwork: fragment #%d, size %d, str %s", count, fragment_size, fragment);
-		uri->fragments = GPHDUri_parse_fragment(fragment, uri->fragments);
-		segwork += fragment_size;
-		++count;
-		pfree(sizestr);
-		pfree(fragment);
-	}
-}
-
-/*
- * Parsed a fragment string in the form:
- * <ip>@<port>@<index>[@user_data] - 192.168.1.1@1422@1[@user_data]
- * to authority ip:port - 192.168.1.1:1422
- * to index - 1
- * user data is optional
- */
-static List*
-GPHDUri_parse_fragment(char* fragment, List* fragments)
-{
-	if (!fragment)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("internal error in pxfuriparser.c:GPHDUri_parse_fragment. Fragment string is null.")));
-	}
-
-	char	*dup_frag = pstrdup(fragment);
-	char	*value_start;
-	char	*value_end;
-
-	StringInfoData authority_formatter;
-	FragmentData* fragment_data;
-
-	fragment_data = palloc0(sizeof(FragmentData));
-	initStringInfo(&authority_formatter);
-
-	value_start = dup_frag;
-
-	/* expect ip */
-	value_end = strchr(value_start, segwork_separator);
-	if (value_end == NULL)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("internal error in pxfuriparser.c:GPHDUri_parse_fragment. Fragment string is invalid.")));
-	}
-	*value_end = '\0';
-	appendStringInfo(&authority_formatter, "%s:", value_start);
-	value_start = value_end + 1;
-
-	/* expect port */
-	value_end = strchr(value_start, segwork_separator);
-	if (value_end == NULL)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("internal error in pxfuriparser.c:GPHDUri_parse_fragment. Fragment string is invalid.")));
-	}
-	*value_end = '\0';
-	appendStringInfo(&authority_formatter, "%s", value_start);
-	fragment_data->authority = pstrdup(authority_formatter.data);
-	pfree(authority_formatter.data);
-	value_start = value_end + 1;
-
-	/* expect source name */
-	value_end = strchr(value_start, segwork_separator);
-	if (value_end == NULL)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("internal error in pxfuriparser.c:GPHDUri_parse_fragment. Fragment string is invalid.")));
-	}
-	*value_end = '\0';
-	fragment_data->source_name = pstrdup(value_start);
-	value_start = value_end + 1;
-
-	/* expect index */
-	value_end = strchr(value_start, segwork_separator);
-	if (value_end == NULL)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("internal error in pxfuriparser.c:GPHDUri_parse_fragment. Fragment string is invalid.")));
-	}
-	*value_end = '\0';
-	fragment_data->index = pstrdup(value_start);
-	value_start = value_end + 1;
-
-	/* expect fragment metadata */
-	Assert(value_start);
-	value_end = strchr(value_start, segwork_separator);
-	if (value_end == NULL)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("internal error in pxfuriparser.c:GPHDUri_parse_fragment. Fragment string is invalid.")));
-	}
-	*value_end = '\0';
-	fragment_data->fragment_md = pstrdup(value_start);
-	value_start = value_end + 1;
-
-	/* expect user data */
-	Assert(value_start);
-	value_end = strchr(value_start, segwork_separator);
-	if (value_end == NULL)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("internal error in pxfuriparser.c:GPHDUri_parse_fragment. Fragment string is invalid.")));
-	}
-	*value_end = '\0';
-	fragment_data->user_data = pstrdup(value_start);
-	value_start = value_end + 1;
-
-	/* expect for profile */
-	Assert(value_start);
-	value_end = strchr(value_start, segwork_separator);
-	if (value_end == NULL)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("internal error in pxfuriparser.c:GPHDUri_parse_fragment. Fragment string is invalid.")));
-	}
-	*value_end = '\0';
-	if (strlen(value_start) > 0)
-		fragment_data->profile = pstrdup(value_start);
-
-	return lappend(fragments, fragment_data);
-}
-
-/*
  * Free fragment data
  */
 static void
@@ -544,44 +371,4 @@ GPHDUri_free_fragments(GPHDUri *uri)
 	}
 	list_free(uri->fragments);
 	uri->fragments = NIL;
-}
-
-/*
- * GPHDUri_get_value_for_opt
- *
- * Given a key, find the matching val and assign it to 'val'.
- * If 'emit_error' is set, report an error and quit if the
- * requested key or its value is missing.
- *
- * Returns 0 if the key was found, -1 otherwise.
- */
-int
-GPHDUri_get_value_for_opt(GPHDUri *uri, char *key, char **val, bool emit_error)
-{
-	ListCell	*item;
-
-	foreach(item, uri->options)
-	{
-		OptionData *data = (OptionData*)lfirst(item);
-
-		if (pg_strcasecmp(data->key, key) == 0)
-		{
-			*val = data->value;
-
-			if (emit_error && !(*val))
-				ereport(ERROR,
-						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("No value assigned to the %s option in "
-								"%s", key, uri->uri)));
-
-			return 0;
-		}
-	}
-
-	if (emit_error)
-		ereport(ERROR,
-				(errcode(ERRCODE_SYNTAX_ERROR),
-				 errmsg("Missing %s option in %s", key, uri->uri)));
-
-	return -1;
 }
